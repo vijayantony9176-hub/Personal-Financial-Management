@@ -1,0 +1,396 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f7fb;
+  color: #172033;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+header {
+  background: #111827;
+  color: white;
+  padding: 24px 8%;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 32px;
+}
+
+header p {
+  margin: 6px 0 0;
+  opacity: 0.7;
+}
+
+main {
+  max-width: 1100px;
+  margin: auto;
+  padding: 40px 20px;
+}
+
+.welcome h2 {
+  margin-bottom: 5px;
+  font-size: 30px;
+}
+
+.welcome p {
+  color: #667085;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin: 30px 0;
+}
+
+.card,
+.panel,
+.insight,
+.reasoning {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.06);
+}
+
+.card span {
+  color: #667085;
+  font-size: 14px;
+}
+
+.card h2 {
+  margin-bottom: 0;
+  font-size: 25px;
+}
+
+.panel {
+  margin-bottom: 25px;
+}
+
+.expense {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.expense:last-child {
+  border-bottom: none;
+}
+
+.insight {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  border-left: 5px solid #2563eb;
+}
+
+.insight p {
+  color: #667085;
+  max-width: 700px;
+  line-height: 1.6;
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: bold;
+  color: #2563eb;
+}
+
+button {
+  border: none;
+  background: #2563eb;
+  color: white;
+  padding: 12px 22px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.reasoning {
+  margin-top: 20px;
+  border: 2px solid #2563eb;
+}
+
+.reason {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 10px;
+}
+
+.reason div {
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.arrow {
+  text-align: center;
+  font-size: 25px;
+  color: #2563eb;
+}
+
+.final {
+  background: #eef4ff;
+  border-radius: 10px;
+}
+
+@media (max-width: 800px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .insight {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 500px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
+.input-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.input-row input {
+  padding: 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  font-size: 15px;
+  flex: 1;
+  min-width: 150px;
+}
+
+.goal-info {
+  margin-top: 20px;
+}
+
+.goal-info h3 {
+  margin-bottom: 5px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 12px;
+  background: #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 15px 0;
+}
+
+.progress {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+.delete-btn {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.delete-btn:hover {
+  background: #b91c1c;
+}
+.goal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.goal-delete {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.goal-delete:hover {
+  background: #b91c1c;
+}
+
+.goal-info {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+.expense-breakdown {
+  margin-top: 20px;
+}
+
+.expense-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.expense-bar {
+  width: 100%;
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.expense-progress {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+
+.expense-percentage {
+  font-size: 13px;
+  color: #667085;
+  margin-top: 5px;
+}
+.expense-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.expense-delete {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 5px;
+}
+
+.expense-delete:hover {
+  transform: scale(1.15);
+}
+/* =========================
+   EXPENSE DELETE
+========================= */
+
+.expense-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.expense-delete {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 5px;
+}
+
+.expense-delete:hover {
+  transform: scale(1.15);
+}
+
+/* =========================
+   SUBSCRIPTIONS
+========================= */
+
+.subscription-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  margin-top: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.subscription-item p {
+  margin: 5px 0 0;
+  color: #667085;
+}
+
+.subscription-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.subscription-actions span {
+  font-weight: 600;
+}
+
+.subscription-total {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: 12px;
+  background: #f5f7ff;
+}
+
+.subscription-total div {
+  display: flex;
+  justify-content: space-between;
+  margin: 8px 0;
+}
+/* =========================
+   WHAT-IF SIMULATOR
+========================= */
+
+.what-if-result {
+  margin-top: 20px;
+  padding: 20px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.what-if-result h3 {
+  margin-bottom: 15px;
+}
+
+.what-if-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.what-if-reasoning {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.what-if-reasoning p {
+  margin: 10px 0;
+}
