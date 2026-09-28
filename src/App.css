@@ -394,3 +394,18 @@ button:hover {
 .what-if-reasoning p {
   margin: 10px 0;
 }
+/* MeTTa Glass Box Analysis */
+
+.panel button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.panel button:hover {
+  opacity: 0.9;
+}

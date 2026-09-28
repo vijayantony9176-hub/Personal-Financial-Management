@@ -68,6 +68,8 @@ function App() {
   const [whatIfAmount, setWhatIfAmount] = useState("");
   const [showWhatIf, setShowWhatIf] = useState(false);
 
+  const [glassBoxResult, setGlassBoxResult] = useState(null);
+
   // =========================
 // FINANCIAL AGENT
 // =========================
@@ -75,6 +77,7 @@ function App() {
 const [agentQuestion, setAgentQuestion] = useState("");
 const [agentResponse, setAgentResponse] = useState("");
 const [showAgentReasoning, setShowAgentReasoning] = useState(false);
+const [agentReasoning, setAgentReasoning] = useState([]);
 
   // =========================
   // RESET FINANCIAL DATA
@@ -251,65 +254,67 @@ const getLargestExpense = () => {
   );
 };
 
-const askFinancialAgent = () => {
-  const question = agentQuestion.toLowerCase();
+const askFinancialAgent = async (questionText = agentQuestion) => {
+  try {
+    const response = await fetch("http://127.0.0.1:8000/agent", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+  question: questionText,
+  income: income,
+  expenses: expenses,
+  subscriptions: subscriptions,
+}),
+    });
 
-  let response = "";
+    if (!response.ok) {
+      throw new Error("Financial Agent request failed");
+    }
 
-  if (
-    question.includes("save") ||
-    question.includes("saving")
-  ) {
-    response =
-      `Your current monthly savings are ₹${savings.toLocaleString()}. ` +
-      `Your savings rate is ${savingsRate}%. ` +
-      `Your largest expense is ${getLargestExpense().name} ` +
-      `at ₹${getLargestExpense().amount.toLocaleString()}.`;
-  } else if (
-    question.includes("expense") ||
-    question.includes("spend") ||
-    question.includes("spending")
-  ) {
-    const largest = getLargestExpense();
+    const data = await response.json();
 
-    response =
-      `Your total monthly expenses are ₹${totalExpenses.toLocaleString()}. ` +
-      `Your largest expense is ${largest.name} ` +
-      `at ₹${largest.amount.toLocaleString()}.`;
-  } else if (
-    question.includes("subscription")
-  ) {
-    response =
-      `You currently have ${subscriptions.length} subscriptions ` +
-      `costing ₹${totalSubscriptionMonthly.toLocaleString()} per month ` +
-      `or ₹${totalSubscriptionYearly.toLocaleString()} per year.`;
-  } else if (
-    question.includes("goal")
-  ) {
-    response =
-      goals.length > 0
-        ? `You currently have ${goals.length} financial goal(s). ` +
-          `Your first goal is "${goals[0].name}" with ` +
-          `₹${Math.max(
-            goals[0].target - goals[0].current,
-            0
-          ).toLocaleString()} remaining.`
-        : "You don't have any financial goals yet.";
-  } else {
-    response =
-      `I can analyze your income, expenses, savings, subscriptions, ` +
-      `and financial goals. Try asking "How can I save more?"`;
+    setAgentResponse(data.answer);
+setAgentReasoning(data.reasoning || []);
+setShowAgentReasoning(false);
+
+  } catch (error) {
+    console.error("Financial Agent connection error:", error);
+
+    setAgentResponse(
+      "Unable to connect to the FinGlass Financial Agent. Make sure the FastAPI backend is running."
+    );
+
+    setShowAgentReasoning(false);
   }
-
-  setAgentResponse(response);
-  setShowAgentReasoning(false);
 };
 
 
 // =========================
 // UI
 // =========================
+const runGlassBoxAnalysis = async () => {
+  try {
+    const response = await fetch("http://127.0.0.1:8000/reason", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        income: income,
+        expenses: expenses,
+      }),
+    });
 
+    const data = await response.json();
+
+setGlassBoxResult(data);
+
+  } catch (error) {
+    console.error("Glass Box connection error:", error);
+  }
+};
 return (
     <div className="app">
 
@@ -927,7 +932,71 @@ return (
 
           )}
 
-        </section>
+                </section>
+
+
+        {/* METTA GLASS BOX ANALYSIS */}
+
+<section className="panel">
+
+  <h2>🧠 MeTTa Glass Box Analysis</h2>
+
+  <p>
+    Send your current financial data to the
+    MeTTa reasoning engine.
+  </p>
+
+  <button onClick={runGlassBoxAnalysis}>
+    🧠 Run Glass Box Analysis
+  </button>
+
+  {glassBoxResult && (
+    <div className="agent-response">
+
+      <h3>📊 MeTTa Analysis Result</h3>
+
+      <p>
+        <strong>Monthly income:</strong>{" "}
+        ₹{glassBoxResult.income.toLocaleString()}
+      </p>
+
+      <p>
+        <strong>Total expenses:</strong>{" "}
+        ₹{glassBoxResult.expenses.toLocaleString()}
+      </p>
+
+      <p>
+        <strong>Monthly savings:</strong>{" "}
+        ₹{glassBoxResult.savings.toLocaleString()}
+      </p>
+
+      <p>
+        <strong>Savings rate:</strong>{" "}
+        {glassBoxResult.savings_rate}%
+      </p>
+
+      <div className="agent-reasoning">
+
+        <span className="badge">
+          GLASS BOX REASONING
+        </span>
+
+        {glassBoxResult.reasoning.map(
+          (step, index) => (
+            <p key={index}>
+              <strong>{index + 1}.</strong>{" "}
+              {step}
+            </p>
+          )
+        )}
+
+      </div>
+
+    </div>
+  )}
+
+</section>
+
 
         {/* GLASS BOX */}
 
@@ -1055,12 +1124,143 @@ return (
 
           </section>
 
-        )}
+                )}
+
+        {/* =========================
+            FINANCIAL AGENT
+        ========================= */}
+
+        <section className="panel agent-panel">
+
+          <span className="badge">
+            🤖 FINANCIAL AGENT
+          </span>
+
+          <h2>Ask FinGlass</h2>
+
+          <p>
+            Ask questions about your income, expenses,
+            savings, subscriptions, or financial goals.
+          </p>
+
+          <div className="input-row">
+
+            <input
+              type="text"
+              value={agentQuestion}
+              onChange={(e) =>
+                setAgentQuestion(e.target.value)
+              }
+              placeholder="e.g. How can I save more?"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  askFinancialAgent();
+                }
+              }}
+            />
+
+            <button
+              onClick={() => askFinancialAgent()}
+            >
+              Ask Agent
+            </button>
+
+          </div>
+
+          <div className="quick-questions">
+
+            <button
+              onClick={() => {
+                setAgentQuestion("How can I save more?");
+                askFinancialAgent("How can I save more?");
+              }}
+            >
+              💰 How can I save more?
+            </button>
+
+            <button
+              onClick={() => {
+                setAgentQuestion(
+                  "What is my biggest expense?"
+                );
+                askFinancialAgent(
+                  "What is my biggest expense?"
+                );
+              }}
+            >
+              📊 Biggest expense?
+            </button>
+
+            <button
+              onClick={() => {
+                setAgentQuestion(
+                  "How much are my subscriptions?"
+                );
+                askFinancialAgent(
+                  "How much are my subscriptions?"
+                );
+              }}
+            >
+              📱 Subscription cost?
+            </button>
+
+          </div>
+
+          {agentResponse && (
+
+            <div className="agent-response">
+
+              <h3>🤖 FinGlass Agent</h3>
+
+              <p>{agentResponse}</p>
+
+              <button
+                className="why-button"
+                onClick={() =>
+                  setShowAgentReasoning(
+                    !showAgentReasoning
+                  )
+                }
+              >
+                {showAgentReasoning
+                  ? "Hide reasoning"
+                  : "🔍 Why did you say this?"}
+              </button>
+
+              {showAgentReasoning && (
+
+  <div className="agent-reasoning">
+
+    <span className="badge">
+      GLASS BOX REASONING
+    </span>
+
+    {agentReasoning.map((step, index) => (
+      <p key={index}>
+        <strong>{index + 1}.</strong>{" "}
+        {step}
+      </p>
+    ))}
+
+    <p className="agent-final">
+      ✓ Reasoning returned by the MeTTa Financial Agent.
+    </p>
+
+  </div>
+
+)}
+
+            </div>
+
+          )}
+
+        </section>
 
       </main>
 
     </div>
   );
+
 }
 
 export default App;
