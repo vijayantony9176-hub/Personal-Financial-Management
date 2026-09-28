@@ -1053,7 +1053,7 @@ function App() {
     try {
       const response =
         await fetch(
-          "http://127.0.0.1:8000/agent",
+          ""https://finglass-backend.onrender.com/agent"",
           {
             method:
               "POST",
@@ -1120,7 +1120,7 @@ function App() {
       try {
         const response =
           await fetch(
-            "http://127.0.0.1:8000/reason",
+            ""https://finglass-backend.onrender.com/reason"",
             {
               method:
                 "POST",
