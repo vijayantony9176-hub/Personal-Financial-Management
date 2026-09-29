@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+
 import "./App.css";
 
 function App() {
@@ -200,6 +201,7 @@ function App() {
   }, [trips]);
 
   const [newTripName, setNewTripName] = useState("");
+
   const [newTripDestination, setNewTripDestination] =
     useState("");
 
@@ -217,6 +219,29 @@ function App() {
 
   const [newTripExpenseAmount, setNewTripExpenseAmount] =
     useState("");
+
+  // =========================
+  // EMI MANAGER
+  // =========================
+
+  const [emis, setEmis] = useState(() => {
+    const saved = localStorage.getItem("finglass_emis");
+
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      "finglass_emis",
+      JSON.stringify(emis)
+    );
+  }, [emis]);
+
+  const [newEmiName, setNewEmiName] = useState("");
+  const [newEmiTotalAmount, setNewEmiTotalAmount] = useState("");
+  const [newEmiAmount, setNewEmiAmount] = useState("");
+  const [newEmiPaidAmount, setNewEmiPaidAmount] = useState("");
+  const [newEmiDueDay, setNewEmiDueDay] = useState("");
 
   // =========================
   // NEW GOAL INPUTS
@@ -252,6 +277,7 @@ function App() {
   // =========================
 
   const [agentQuestion, setAgentQuestion] = useState("");
+
   const [agentResponse, setAgentResponse] = useState("");
 
   const [
@@ -315,6 +341,10 @@ function App() {
     setTrips([]);
     setSelectedTripId(null);
 
+    // IMPORTANT:
+    // EMIs are recurring monthly commitments,
+    // so they are NOT reset when the month changes.
+
     localStorage.setItem(
       "finglass_income",
       "0"
@@ -348,6 +378,7 @@ function App() {
     setGoals([]);
     setSubscriptions([]);
     setTrips([]);
+    setEmis([]);
     setSelectedTripId(null);
     setHistory([]);
     setPreviousSavings(0);
@@ -358,6 +389,7 @@ function App() {
     localStorage.removeItem("finglass_goals");
     localStorage.removeItem("finglass_subscriptions");
     localStorage.removeItem("finglass_trips");
+    localStorage.removeItem("finglass_emis");
     localStorage.removeItem("finglass_history");
     localStorage.removeItem("finglass_previous_savings");
 
@@ -379,6 +411,7 @@ function App() {
       subscriptions,
       goals,
       trips,
+      emis,
       history,
       previousSavings,
       exportedAt: new Date().toISOString(),
@@ -402,7 +435,9 @@ function App() {
     link.download = "finglass-backup.json";
 
     document.body.appendChild(link);
+
     link.click();
+
     document.body.removeChild(link);
 
     URL.revokeObjectURL(url);
@@ -450,6 +485,21 @@ function App() {
         setTrips(
           Array.isArray(data.trips)
             ? data.trips
+            : []
+        );
+
+        // Backward compatible:
+        // Old backup files may not contain the newer EMI payment fields.
+        setEmis(
+          Array.isArray(data.emis)
+            ? data.emis.map((emi) => ({
+                ...emi,
+                totalAmount: Number(emi.totalAmount ?? emi.monthlyAmount ?? 0),
+                paidAmount: Number(emi.paidAmount ?? 0),
+                paymentHistory: Array.isArray(emi.paymentHistory)
+                  ? emi.paymentHistory
+                  : [],
+              }))
             : []
         );
 
@@ -514,6 +564,258 @@ function App() {
           100
         ).toFixed(1)
       : 0;
+
+  // =========================
+  // EMI CALCULATIONS
+  // =========================
+
+  const getEmiPaidAmount = (emi) => {
+    const recordedPayments = Array.isArray(emi.paymentHistory)
+      ? emi.paymentHistory.reduce(
+          (total, payment) => total + Number(payment.amount || 0),
+          0
+        )
+      : 0;
+
+    return Math.min(
+      Number(emi.totalAmount ?? emi.monthlyAmount) || 0,
+      (Number(emi.paidAmount) || 0) + recordedPayments
+    );
+  };
+
+  const getEmiTotalAmount = (emi) =>
+    Number(emi.totalAmount ?? emi.monthlyAmount) || 0;
+
+  const getEmiRemainingAmount = (emi) =>
+    Math.max(0, getEmiTotalAmount(emi) - getEmiPaidAmount(emi));
+
+  const getEmiRemainingInstallments = (emi) => {
+    const monthlyAmount = Number(emi.monthlyAmount) || 0;
+    const remainingAmount = getEmiRemainingAmount(emi);
+
+    return monthlyAmount > 0
+      ? Math.ceil(remainingAmount / monthlyAmount)
+      : 0;
+  };
+
+  const totalEmiMonthly = emis.reduce(
+    (total, emi) =>
+      total + Number(emi.monthlyAmount),
+    0
+  );
+
+  const totalEmiRemaining = emis.reduce(
+    (total, emi) => total + getEmiRemainingAmount(emi),
+    0
+  );
+
+  const totalEmiPaid = emis.reduce(
+    (total, emi) => total + getEmiPaidAmount(emi),
+    0
+  );
+
+  // =========================
+  // EMI DATE HELPERS
+  // =========================
+
+  const getClampedEmiDate = (
+    year,
+    month,
+    dueDay
+  ) => {
+    const lastDay = new Date(
+      year,
+      month + 1,
+      0
+    ).getDate();
+
+    const safeDay = Math.min(
+      Math.max(Number(dueDay), 1),
+      lastDay
+    );
+
+    return new Date(
+      year,
+      month,
+      safeDay
+    );
+  };
+
+  const getEmiDueKey = (date) => {
+    const value = new Date(date);
+
+    return `${value.getFullYear()}-${String(
+      value.getMonth() + 1
+    ).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+  };
+
+  const hasPaymentForDueDate = (emi, dueDate) => {
+    const dueKey = getEmiDueKey(dueDate);
+
+    return Array.isArray(emi.paymentHistory)
+      ? emi.paymentHistory.some(
+          (payment) => payment.dueKey === dueKey
+        )
+      : false;
+  };
+
+  const getNextEmiDueDate = (emi) => {
+    const today = new Date();
+
+    today.setHours(0, 0, 0, 0);
+
+    let year = today.getFullYear();
+    let month = today.getMonth();
+
+    let dueDate = getClampedEmiDate(
+      year,
+      month,
+      emi.dueDay
+    );
+
+    // If this month's EMI has already been paid, move to the next unpaid month.
+    while (hasPaymentForDueDate(emi, dueDate)) {
+      month++;
+
+      if (month > 11) {
+        month = 0;
+        year++;
+      }
+
+      dueDate = getClampedEmiDate(
+        year,
+        month,
+        emi.dueDay
+      );
+    }
+
+    return dueDate;
+  };
+
+  const getDaysUntilEmi = (date) => {
+    const today = new Date();
+
+    today.setHours(0, 0, 0, 0);
+
+    const target = new Date(date);
+
+    target.setHours(0, 0, 0, 0);
+
+    return Math.ceil(
+      (target - today) /
+        (1000 * 60 * 60 * 24)
+    );
+  };
+
+  const formatEmiDueDate = (date) => {
+    return date.toLocaleDateString(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
+  };
+
+  // =========================
+  // EMI FUNCTIONS
+  // =========================
+
+  const addEmi = () => {
+    const totalAmount = Number(newEmiTotalAmount);
+    const monthlyAmount = Number(newEmiAmount);
+    const paidAmount = Number(newEmiPaidAmount || 0);
+    const dueDay = Number(newEmiDueDay);
+
+    if (
+      !newEmiName.trim() ||
+      !Number.isFinite(totalAmount) ||
+      totalAmount <= 0 ||
+      !Number.isFinite(monthlyAmount) ||
+      monthlyAmount <= 0 ||
+      !Number.isFinite(paidAmount) ||
+      paidAmount < 0 ||
+      paidAmount > totalAmount
+    ) {
+      return;
+    }
+
+    if (
+      !Number.isInteger(dueDay) ||
+      dueDay < 1 ||
+      dueDay > 31
+    ) {
+      return;
+    }
+
+    setEmis((currentEmis) => [
+      ...currentEmis,
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        name: newEmiName.trim(),
+        totalAmount,
+        monthlyAmount,
+        paidAmount,
+        dueDay,
+        paymentHistory: [],
+      },
+    ]);
+
+    setNewEmiName("");
+    setNewEmiTotalAmount("");
+    setNewEmiAmount("");
+    setNewEmiPaidAmount("");
+    setNewEmiDueDay("");
+  };
+
+  const recordEmiPayment = (emiId) => {
+    setEmis((currentEmis) =>
+      currentEmis.map((emi) => {
+        if (emi.id !== emiId) return emi;
+
+        const remainingAmount = getEmiRemainingAmount(emi);
+
+        if (remainingAmount <= 0) return emi;
+
+        const dueDate = getNextEmiDueDate(emi);
+        const paymentAmount = Math.min(
+          Number(emi.monthlyAmount) || 0,
+          remainingAmount
+        );
+
+        if (paymentAmount <= 0 || hasPaymentForDueDate(emi, dueDate)) {
+          return emi;
+        }
+
+        const payment = {
+          id: `${Date.now()}-${Math.random()}`,
+          amount: paymentAmount,
+          date: new Date().toISOString(),
+          dueKey: getEmiDueKey(dueDate),
+          dueDate: dueDate.toISOString(),
+        };
+
+        return {
+          ...emi,
+          paymentHistory: [
+            ...(Array.isArray(emi.paymentHistory)
+              ? emi.paymentHistory
+              : []),
+            payment,
+          ],
+        };
+      })
+    );
+  };
+
+  const deleteEmi = (emiId) => {
+    setEmis((currentEmis) =>
+      currentEmis.filter(
+        (emi) => emi.id !== emiId
+      )
+    );
+  };
 
   // =========================
   // WHAT-IF CALCULATIONS
@@ -1053,7 +1355,7 @@ function App() {
     try {
       const response =
         await fetch(
-          ""https://finglass-backend.onrender.com/agent"",
+          "https://finglass-backend.onrender.com/agent",
           {
             method:
               "POST",
@@ -1120,7 +1422,7 @@ function App() {
       try {
         const response =
           await fetch(
-            ""https://finglass-backend.onrender.com/reason"",
+            "https://finglass-backend.onrender.com/reason",
             {
               method:
                 "POST",
@@ -1162,7 +1464,9 @@ function App() {
       {/* HEADER */}
 
       <header>
+
         <div>
+
           <h1>
             💰 FinGlass
           </h1>
@@ -1170,7 +1474,9 @@ function App() {
           <p>
             Your money, explained.
           </p>
+
         </div>
+
       </header>
 
       <main>
@@ -1260,6 +1566,7 @@ function App() {
         {/* HISTORY */}
 
         {showHistory && (
+
           <section className="panel">
 
             <h2>
@@ -1355,6 +1662,7 @@ function App() {
             )}
 
           </section>
+
         )}
 
         {/* DASHBOARD CARDS */}
@@ -1362,6 +1670,7 @@ function App() {
         <section className="cards">
 
           <div className="card">
+
             <span>
               Monthly Income
             </span>
@@ -1370,9 +1679,11 @@ function App() {
               ₹
               {income.toLocaleString()}
             </h2>
+
           </div>
 
           <div className="card">
+
             <span>
               Total Expenses
             </span>
@@ -1381,9 +1692,11 @@ function App() {
               ₹
               {totalExpenses.toLocaleString()}
             </h2>
+
           </div>
 
           <div className="card">
+
             <span>
               Monthly Savings
             </span>
@@ -1392,9 +1705,11 @@ function App() {
               ₹
               {monthlySavings.toLocaleString()}
             </h2>
+
           </div>
 
           <div className="card">
+
             <span>
               Previous Savings
             </span>
@@ -1403,9 +1718,11 @@ function App() {
               ₹
               {previousSavings.toLocaleString()}
             </h2>
+
           </div>
 
           <div className="card">
+
             <span>
               Total Savings
             </span>
@@ -1414,9 +1731,11 @@ function App() {
               ₹
               {totalSavings.toLocaleString()}
             </h2>
+
           </div>
 
           <div className="card">
+
             <span>
               Savings Rate
             </span>
@@ -1424,6 +1743,7 @@ function App() {
             <h2>
               {savingsRate}%
             </h2>
+
           </div>
 
         </section>
@@ -1558,6 +1878,7 @@ function App() {
                     : 0;
 
                 return (
+
                   <div
                     className="expense-breakdown"
                     key={
@@ -1593,6 +1914,7 @@ function App() {
                         </div>
 
                         {expense.tripId && (
+
                           <div
                             style={{
                               marginTop:
@@ -1605,6 +1927,7 @@ function App() {
                           >
                             ✈️ Trip expense
                           </div>
+
                         )}
 
                       </div>
@@ -1619,6 +1942,7 @@ function App() {
                         </strong>
 
                         {!expense.tripId && (
+
                           <button
                             className="expense-delete"
                             onClick={() =>
@@ -1629,6 +1953,7 @@ function App() {
                           >
                             🗑️
                           </button>
+
                         )}
 
                       </div>
@@ -1653,6 +1978,7 @@ function App() {
                     </p>
 
                   </div>
+
                 );
               }
             )
@@ -1789,6 +2115,7 @@ function App() {
           <div className="subscription-total">
 
             <div>
+
               <span>
                 Monthly subscriptions
               </span>
@@ -1797,9 +2124,11 @@ function App() {
                 ₹
                 {totalSubscriptionMonthly.toLocaleString()}
               </strong>
+
             </div>
 
             <div>
+
               <span>
                 Yearly subscriptions
               </span>
@@ -1808,9 +2137,263 @@ function App() {
                 ₹
                 {totalSubscriptionYearly.toLocaleString()}
               </strong>
+
             </div>
 
           </div>
+
+        </section>
+
+        {/* EMI MANAGER */}
+
+        <section className="panel">
+
+          <h2>
+            🏦 EMI Manager
+          </h2>
+
+          <p>
+            Track your total loan amount, payments, remaining balance, monthly EMI and due dates.
+          </p>
+
+          <div className="input-row">
+
+            <input
+              type="text"
+              value={newEmiName}
+              onChange={(e) =>
+                setNewEmiName(e.target.value)
+              }
+              placeholder="EMI name (e.g. Car Loan)"
+            />
+
+            <input
+              type="number"
+              min="1"
+              value={newEmiTotalAmount}
+              onChange={(e) =>
+                setNewEmiTotalAmount(e.target.value)
+              }
+              placeholder="Total loan amount ₹"
+            />
+
+            <input
+              type="number"
+              min="1"
+              value={newEmiAmount}
+              onChange={(e) =>
+                setNewEmiAmount(e.target.value)
+              }
+              placeholder="Monthly EMI ₹"
+            />
+
+            <input
+              type="number"
+              min="0"
+              value={newEmiPaidAmount}
+              onChange={(e) =>
+                setNewEmiPaidAmount(e.target.value)
+              }
+              placeholder="Already paid ₹"
+            />
+
+            <input
+              type="number"
+              min="1"
+              max="31"
+              value={newEmiDueDay}
+              onChange={(e) =>
+                setNewEmiDueDay(e.target.value)
+              }
+              placeholder="Due day (1-31)"
+            />
+
+            <button onClick={addEmi}>
+              + Add EMI
+            </button>
+
+          </div>
+
+          {emis.length === 0 ? (
+
+            <p>
+              No EMIs added yet.
+            </p>
+
+          ) : (
+
+            emis.map((emi) => {
+              const totalAmount = getEmiTotalAmount(emi);
+              const paidAmount = getEmiPaidAmount(emi);
+              const remainingAmount = getEmiRemainingAmount(emi);
+              const remainingInstallments = getEmiRemainingInstallments(emi);
+              const paidPercentage =
+                totalAmount > 0
+                  ? Math.min(100, (paidAmount / totalAmount) * 100)
+                  : 0;
+              const dueDate = getNextEmiDueDate(emi);
+              const daysRemaining = getDaysUntilEmi(dueDate);
+              const isCompleted = remainingAmount <= 0;
+
+              let completionDate = null;
+              if (!isCompleted && remainingInstallments > 0) {
+                completionDate = new Date(dueDate);
+                completionDate.setMonth(
+                  completionDate.getMonth() + remainingInstallments - 1
+                );
+              }
+
+              return (
+
+                <div
+                  className="subscription-item"
+                  key={emi.id}
+                  style={{
+                    display: "block",
+                    marginBottom: "18px",
+                  }}
+                >
+
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start" }}>
+
+                    <div>
+                      <strong>
+                        🏦 {emi.name}
+                      </strong>
+
+                      <p>
+                        Total loan: ₹{totalAmount.toLocaleString()}
+                      </p>
+
+                      <p>
+                        Monthly EMI: ₹{Number(emi.monthlyAmount).toLocaleString()}
+                      </p>
+
+                      <p>
+                        Paid: ₹{paidAmount.toLocaleString()}
+                      </p>
+
+                      <p>
+                        Remaining: ₹{remainingAmount.toLocaleString()}
+                      </p>
+
+                      <p>
+                        Remaining EMIs: {remainingInstallments}
+                      </p>
+
+                      {!isCompleted && (
+                        <p>
+                          📅 Due: {formatEmiDueDate(dueDate)}
+                        </p>
+                      )}
+
+                      {!isCompleted && completionDate && (
+                        <p>
+                          🏁 Estimated completion: {formatEmiDueDate(completionDate)}
+                        </p>
+                      )}
+
+                      {isCompleted && (
+                        <p>
+                          🎉 EMI fully paid
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="subscription-actions" style={{ flexDirection: "column", alignItems: "flex-end" }}>
+
+                      {!isCompleted && (
+                        <span>
+                          {daysRemaining < 0
+                            ? `🔴 ${Math.abs(daysRemaining)} days overdue`
+                            : daysRemaining === 0
+                            ? "🔴 Due today"
+                            : daysRemaining === 1
+                            ? "🟠 1 day remaining"
+                            : `🟢 ${daysRemaining} days remaining`}
+                        </span>
+                      )}
+
+                      <button
+                        onClick={() => recordEmiPayment(emi.id)}
+                        disabled={isCompleted}
+                      >
+                        {isCompleted ? "✓ Completed" : `✓ Mark ₹${Math.min(Number(emi.monthlyAmount) || 0, remainingAmount).toLocaleString()} Paid`}
+                      </button>
+
+                      <button
+                        className="expense-delete"
+                        onClick={() => deleteEmi(emi.id)}
+                      >
+                        🗑️
+                      </button>
+
+                    </div>
+
+                  </div>
+
+                  <div style={{ marginTop: "14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: "6px" }}>
+                      <span>Payment progress</span>
+                      <strong>{paidPercentage.toFixed(0)}%</strong>
+                    </div>
+                    <div style={{ height: "10px", background: "#e5e7eb", borderRadius: "999px", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          width: `${paidPercentage}%`,
+                          height: "100%",
+                          background: "#667eea",
+                          borderRadius: "999px",
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {Array.isArray(emi.paymentHistory) && emi.paymentHistory.length > 0 && (
+                    <div style={{ marginTop: "14px" }}>
+                      <strong>Payment history</strong>
+                      {emi.paymentHistory
+                        .slice()
+                        .reverse()
+                        .slice(0, 5)
+                        .map((payment) => (
+                          <p key={payment.id} style={{ margin: "6px 0", fontSize: "13px" }}>
+                            ₹{Number(payment.amount).toLocaleString()} paid on {formatEmiDueDate(new Date(payment.date))}
+                          </p>
+                        ))}
+                    </div>
+                  )}
+
+                </div>
+
+              );
+            })
+
+          )}
+
+          {emis.length > 0 && (
+
+            <div className="subscription-total">
+
+              <div>
+                <span>Total monthly EMIs</span>
+                <strong>₹{totalEmiMonthly.toLocaleString()}</strong>
+              </div>
+
+              <div>
+                <span>Total paid across loans</span>
+                <strong>₹{totalEmiPaid.toLocaleString()}</strong>
+              </div>
+
+              <div>
+                <span>Total remaining across loans</span>
+                <strong>₹{totalEmiRemaining.toLocaleString()}</strong>
+              </div>
+
+            </div>
+
+          )}
 
         </section>
 
@@ -1911,6 +2494,7 @@ function App() {
                   "center",
               }}
             >
+
               <p>
                 No trips created yet.
               </p>
@@ -1927,6 +2511,7 @@ function App() {
                 above to start tracking
                 travel expenses.
               </p>
+
             </div>
 
           ) : (
@@ -2014,6 +2599,7 @@ function App() {
                           </h3>
 
                           {trip.destination && (
+
                             <p
                               style={{
                                 margin:
@@ -2027,6 +2613,7 @@ function App() {
                                 trip.destination
                               }
                             </p>
+
                           )}
 
                           <p
@@ -2410,7 +2997,9 @@ function App() {
                     </div>
 
                   );
+
                 }
+
               )}
 
             </div>
