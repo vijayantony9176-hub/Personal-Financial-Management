@@ -166,7 +166,21 @@ function App() {
       "finglass_subscriptions"
     );
 
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+
+    return JSON.parse(saved).map(
+      (subscription, index) => ({
+        ...subscription,
+        id:
+          subscription.id ||
+          `subscription-${index}-${String(
+            subscription.name || "subscription"
+          )
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, "-")}`,
+      })
+    );
   });
 
   useEffect(() => {
@@ -174,6 +188,41 @@ function App() {
       "finglass_subscriptions",
       JSON.stringify(subscriptions)
     );
+  }, [subscriptions]);
+
+  // Sync existing subscriptions into Spending Breakdown.
+  // This also upgrades subscriptions that were saved before
+  // automatic subscription expenses were added.
+  useEffect(() => {
+    const missingSubscriptionExpenses =
+      subscriptions.filter(
+        (subscription) =>
+          subscription.id &&
+          !expenses.some(
+            (expense) =>
+              expense.subscriptionId ===
+              subscription.id
+          )
+      );
+
+    if (missingSubscriptionExpenses.length === 0) {
+      return;
+    }
+
+    setExpenses((currentExpenses) => [
+      ...currentExpenses,
+      ...missingSubscriptionExpenses.map(
+        (subscription) => ({
+          id: `expense-${subscription.id}`,
+          name: subscription.name,
+          amount: Number(subscription.amount),
+          icon: "📱",
+          date: getToday(),
+          subscriptionId: subscription.id,
+          isSubscriptionExpense: true,
+        })
+      ),
+    ]);
   }, [subscriptions]);
 
   const [newSubscription, setNewSubscription] = useState("");
@@ -1262,17 +1311,34 @@ function App() {
       return;
     }
 
-    setSubscriptions([
-      ...subscriptions,
+    const subscriptionName =
+      newSubscription.trim();
+    const subscriptionAmount =
+      Number(newSubscriptionAmount);
+
+    if (
+      !subscriptionName ||
+      !Number.isFinite(subscriptionAmount) ||
+      subscriptionAmount <= 0
+    ) {
+      return;
+    }
+
+    const subscriptionId =
+      `subscription-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    setSubscriptions((currentSubscriptions) => [
+      ...currentSubscriptions,
       {
-        name:
-          newSubscription,
-        amount:
-          Number(
-            newSubscriptionAmount
-          ),
+        id: subscriptionId,
+        name: subscriptionName,
+        amount: subscriptionAmount,
       },
     ]);
+
+    // Spending Breakdown is synchronized below as ONE
+    // combined "Subscriptions" expense. Do not add an
+    // individual Spotify/Netflix expense here.
 
     setNewSubscription("");
     setNewSubscriptionAmount("");
@@ -1285,8 +1351,10 @@ function App() {
   const deleteSubscription = (
     index
   ) => {
-    setSubscriptions(
-      subscriptions.filter(
+    if (!subscriptions[index]) return;
+
+    setSubscriptions((currentSubscriptions) =>
+      currentSubscriptions.filter(
         (_, i) => i !== index
       )
     );
@@ -1300,22 +1368,55 @@ function App() {
     subscriptions.reduce(
       (total, subscription) =>
         total +
-        Number(
-          subscription.amount
-        ),
+        Number(subscription.amount || 0),
       0
     );
+
+  // Keep exactly ONE subscription expense in Spending Breakdown.
+  // This also cleans up duplicate subscription expenses created by
+  // the previous per-subscription implementation.
+  useEffect(() => {
+    setExpenses((currentExpenses) => {
+      const nonSubscriptionExpenses =
+        currentExpenses.filter(
+          (expense) =>
+            !expense.isSubscriptionExpense &&
+            !expense.subscriptionId
+        );
+
+      if (totalSubscriptionMonthly <= 0) {
+        return nonSubscriptionExpenses;
+      }
+
+      return [
+        ...nonSubscriptionExpenses,
+        {
+          id: "subscriptions-expense",
+          name: "Subscriptions",
+          amount: totalSubscriptionMonthly,
+          icon: "🔄",
+          date: getToday(),
+          isSubscriptionExpense: true,
+        },
+      ];
+    });
+  }, [totalSubscriptionMonthly]);
 
   const totalSubscriptionYearly =
     totalSubscriptionMonthly * 12;
 
   const subscriptionExpense =
-    expenses.find(
-      (expense) =>
-        expense.name
-          .toLowerCase() ===
-        "subscriptions"
-    )?.amount || 0;
+    expenses
+      .filter(
+        (expense) =>
+          expense.isSubscriptionExpense ||
+          expense.subscriptionId
+      )
+      .reduce(
+        (total, expense) =>
+          total + Number(expense.amount || 0),
+        0
+      );
 
   const subscriptionPercentage =
     totalExpenses > 0
