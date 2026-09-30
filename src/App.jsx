@@ -115,18 +115,104 @@ function App() {
   }, [goals]);
 
   // =========================
-  // INCOME
-  // =========================
+// INCOME SOURCES — V2 PHASE 1
+// =========================
 
-  const [income, setIncome] = useState(() => {
-    const saved = localStorage.getItem("finglass_income");
+const [incomeSources, setIncomeSources] = useState(() => {
+  const saved = localStorage.getItem("finglass_income_sources");
 
-    return saved !== null ? Number(saved) : 0;
-  });
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
 
-  useEffect(() => {
-    localStorage.setItem("finglass_income", income);
-  }, [income]);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch (error) {
+      console.error("Unable to load income sources:", error);
+    }
+  }
+
+  // Backward compatibility with V1
+  const oldIncome = localStorage.getItem("finglass_income");
+
+  if (oldIncome !== null) {
+    const oldAmount = Number(oldIncome);
+
+    if (oldAmount > 0) {
+      return [
+        {
+          id: `income-migrated-${Date.now()}`,
+          name: "Primary Income",
+          amount: oldAmount,
+        },
+      ];
+    }
+  }
+
+  return [];
+});
+
+useEffect(() => {
+  localStorage.setItem(
+    "finglass_income_sources",
+    JSON.stringify(incomeSources)
+  );
+
+  // Keep V1 compatibility
+  localStorage.setItem(
+    "finglass_income",
+    incomeSources.reduce(
+      (total, source) =>
+        total + Number(source.amount || 0),
+      0
+    )
+  );
+}, [incomeSources]);
+
+const income = incomeSources.reduce(
+  (total, source) =>
+    total + Number(source.amount || 0),
+  0
+);
+
+const [newIncomeName, setNewIncomeName] = useState("");
+const [newIncomeAmount, setNewIncomeAmount] = useState("");
+
+const addIncomeSource = () => {
+  const name = newIncomeName.trim();
+  const amount = Number(newIncomeAmount);
+
+  if (
+    !name ||
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    return;
+  }
+
+  setIncomeSources((currentSources) => [
+    ...currentSources,
+    {
+      id: `income-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      name,
+      amount,
+    },
+  ]);
+
+  setNewIncomeName("");
+  setNewIncomeAmount("");
+};
+
+const deleteIncomeSource = (incomeId) => {
+  setIncomeSources((currentSources) =>
+    currentSources.filter(
+      (source) => source.id !== incomeId
+    )
+  );
+};
 
   // =========================
   // EXPENSES
@@ -188,41 +274,6 @@ function App() {
       "finglass_subscriptions",
       JSON.stringify(subscriptions)
     );
-  }, [subscriptions]);
-
-  // Sync existing subscriptions into Spending Breakdown.
-  // This also upgrades subscriptions that were saved before
-  // automatic subscription expenses were added.
-  useEffect(() => {
-    const missingSubscriptionExpenses =
-      subscriptions.filter(
-        (subscription) =>
-          subscription.id &&
-          !expenses.some(
-            (expense) =>
-              expense.subscriptionId ===
-              subscription.id
-          )
-      );
-
-    if (missingSubscriptionExpenses.length === 0) {
-      return;
-    }
-
-    setExpenses((currentExpenses) => [
-      ...currentExpenses,
-      ...missingSubscriptionExpenses.map(
-        (subscription) => ({
-          id: `expense-${subscription.id}`,
-          name: subscription.name,
-          amount: Number(subscription.amount),
-          icon: "📱",
-          date: getToday(),
-          subscriptionId: subscription.id,
-          isSubscriptionExpense: true,
-        })
-      ),
-    ]);
   }, [subscriptions]);
 
   const [newSubscription, setNewSubscription] = useState("");
@@ -298,7 +349,7 @@ function App() {
 
   const [newGoalName, setNewGoalName] = useState("");
   const [newGoalTarget, setNewGoalTarget] = useState("");
-  const [newGoalCurrent, setNewGoalCurrent] = useState("");
+  
 
   // =========================
   // HISTORY UI
@@ -384,20 +435,15 @@ function App() {
     setPreviousSavings(oldMonthSavings);
 
     // Start new month fresh
-    setIncome(0);
-    setExpenses([]);
-    setSubscriptions([]);
-    setTrips([]);
+setIncomeSources([]);
+setExpenses([]);
+setSubscriptions([]);
+setTrips([]);
     setSelectedTripId(null);
 
     // IMPORTANT:
     // EMIs are recurring monthly commitments,
     // so they are NOT reset when the month changes.
-
-    localStorage.setItem(
-      "finglass_income",
-      "0"
-    );
 
     localStorage.setItem(
       "finglass_expenses",
@@ -422,7 +468,7 @@ function App() {
   // =========================
 
   const resetFinancialData = () => {
-    setIncome(0);
+  setIncomeSources([]);
     setExpenses([]);
     setGoals([]);
     setSubscriptions([]);
@@ -441,7 +487,7 @@ function App() {
     localStorage.removeItem("finglass_emis");
     localStorage.removeItem("finglass_history");
     localStorage.removeItem("finglass_previous_savings");
-
+    localStorage.removeItem("finglass_income_sources");
     localStorage.setItem(
       "finglass_current_month",
       getCurrentMonth()
@@ -454,10 +500,11 @@ function App() {
 
   const exportFinancialData = () => {
     const financialData = {
-      currentMonth,
-      income,
-      expenses,
-      subscriptions,
+  currentMonth,
+  income,
+  incomeSources,
+  expenses,
+  subscriptions,
       goals,
       trips,
       emis,
@@ -507,15 +554,19 @@ function App() {
       try {
         const data = JSON.parse(e.target.result);
 
-        if (
-          typeof data.income !== "number" ||
-          !Array.isArray(data.expenses) ||
-          !Array.isArray(data.subscriptions) ||
-          !Array.isArray(data.goals)
-        ) {
-          alert("Invalid FinGlass backup file.");
-          return;
-        }
+        const hasValidIncomeData =
+  Array.isArray(data.incomeSources) ||
+  typeof data.income === "number";
+
+if (
+  !hasValidIncomeData ||
+  !Array.isArray(data.expenses) ||
+  !Array.isArray(data.subscriptions) ||
+  !Array.isArray(data.goals)
+) {
+  alert("Invalid FinGlass backup file.");
+  return;
+}
 
         const normalizedExpenses = data.expenses.map(
           (expense) => ({
@@ -524,8 +575,21 @@ function App() {
           })
         );
 
-        setIncome(data.income);
-        setExpenses(normalizedExpenses);
+        const importedIncomeSources =
+  Array.isArray(data.incomeSources)
+    ? data.incomeSources
+    : typeof data.income === "number" && data.income > 0
+    ? [
+        {
+          id: `income-imported-${Date.now()}`,
+          name: "Primary Income",
+          amount: data.income,
+        },
+      ]
+    : [];
+
+setIncomeSources(importedIncomeSources);
+setExpenses(normalizedExpenses);
         setSubscriptions(data.subscriptions);
         setGoals(data.goals);
 
@@ -819,44 +883,81 @@ function App() {
   };
 
   const recordEmiPayment = (emiId) => {
-    setEmis((currentEmis) =>
-      currentEmis.map((emi) => {
-        if (emi.id !== emiId) return emi;
+  const emi = emis.find((item) => item.id === emiId);
 
-        const remainingAmount = getEmiRemainingAmount(emi);
+  if (!emi) return;
 
-        if (remainingAmount <= 0) return emi;
+  const remainingAmount = getEmiRemainingAmount(emi);
 
-        const dueDate = getNextEmiDueDate(emi);
-        const paymentAmount = Math.min(
-          Number(emi.monthlyAmount) || 0,
-          remainingAmount
-        );
+  if (remainingAmount <= 0) return;
 
-        if (paymentAmount <= 0 || hasPaymentForDueDate(emi, dueDate)) {
-          return emi;
-        }
+  const dueDate = getNextEmiDueDate(emi);
 
-        const payment = {
-          id: `${Date.now()}-${Math.random()}`,
-          amount: paymentAmount,
-          date: new Date().toISOString(),
-          dueKey: getEmiDueKey(dueDate),
-          dueDate: dueDate.toISOString(),
-        };
+  const paymentAmount = Math.min(
+    Number(emi.monthlyAmount) || 0,
+    remainingAmount
+  );
 
-        return {
-          ...emi,
-          paymentHistory: [
-            ...(Array.isArray(emi.paymentHistory)
-              ? emi.paymentHistory
-              : []),
-            payment,
-          ],
-        };
-      })
-    );
+  if (
+    paymentAmount <= 0 ||
+    hasPaymentForDueDate(emi, dueDate)
+  ) {
+    return;
+  }
+
+  const payment = {
+    id: `${Date.now()}-${Math.random()}`,
+    amount: paymentAmount,
+    date: new Date().toISOString(),
+    dueKey: getEmiDueKey(dueDate),
+    dueDate: dueDate.toISOString(),
   };
+
+  // Record payment inside EMI
+  setEmis((currentEmis) =>
+    currentEmis.map((currentEmi) => {
+      if (currentEmi.id !== emiId) {
+        return currentEmi;
+      }
+
+      return {
+        ...currentEmi,
+        paymentHistory: [
+          ...(Array.isArray(currentEmi.paymentHistory)
+            ? currentEmi.paymentHistory
+            : []),
+          payment,
+        ],
+      };
+    })
+  );
+
+  // Add EMI payment to Expenses
+  setExpenses((currentExpenses) => {
+    const alreadyAdded = currentExpenses.some(
+      (expense) =>
+        expense.emiId === emiId &&
+        expense.emiDueKey === payment.dueKey
+    );
+
+    if (alreadyAdded) {
+      return currentExpenses;
+    }
+
+    return [
+      ...currentExpenses,
+      {
+        name: `EMI: ${emi.name}`,
+        amount: paymentAmount,
+        icon: "🏦",
+        date: getToday(),
+        emiId: emiId,
+        emiPaymentId: payment.id,
+        emiDueKey: payment.dueKey,
+      },
+    ];
+  });
+};
 
   const deleteEmi = (emiId) => {
     setEmis((currentEmis) =>
@@ -884,27 +985,30 @@ function App() {
   // =========================
 
   const addGoal = () => {
-    if (
-      !newGoalName ||
-      !newGoalTarget ||
-      !newGoalCurrent
-    ) {
-      return;
-    }
+  const target = Number(newGoalTarget);
 
-    setGoals([
-      ...goals,
-      {
-        name: newGoalName,
-        target: Number(newGoalTarget),
-        current: Number(newGoalCurrent),
-      },
-    ]);
+  if (
+    !newGoalName.trim() ||
+    !Number.isFinite(target) ||
+    target <= 0
+  ) {
+    return;
+  }
 
-    setNewGoalName("");
-    setNewGoalTarget("");
-    setNewGoalCurrent("");
-  };
+  setGoals((currentGoals) => [
+    ...currentGoals,
+    {
+      id: `goal-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      name: newGoalName.trim(),
+      target,
+    },
+  ]);
+
+  setNewGoalName("");
+  setNewGoalTarget("");
+};
 
   // =========================
   // DELETE GOAL
@@ -1849,41 +1953,139 @@ function App() {
 
         </section>
 
-        {/* INCOME */}
+        {/* INCOME SOURCES — V2 PHASE 1 */}
 
-        <section className="panel">
+<section className="panel">
 
-          <h2>
-            💵 Monthly Income
-          </h2>
+  <h2>
+    💵 Monthly Income
+  </h2>
 
-          <p>
-            Income for{" "}
+  <p>
+    Track all your income sources for{" "}
+    <strong>
+      {formatMonth(currentMonth)}
+    </strong>
+  </p>
+
+  {/* ADD INCOME SOURCE */}
+
+  <div className="input-row">
+
+    <input
+      type="text"
+      value={newIncomeName}
+      onChange={(e) =>
+        setNewIncomeName(e.target.value)
+      }
+      placeholder="Income source (e.g. Salary)"
+    />
+
+    <input
+      type="number"
+      min="0"
+      value={newIncomeAmount}
+      onChange={(e) =>
+        setNewIncomeAmount(e.target.value)
+      }
+      placeholder="Monthly amount ₹"
+    />
+
+    <button onClick={addIncomeSource}>
+      + Add Income
+    </button>
+
+  </div>
+
+  {/* INCOME SOURCE LIST */}
+
+  {incomeSources.length === 0 ? (
+
+    <p
+      style={{
+        marginTop: "18px",
+        color: "#667085",
+      }}
+    >
+      No income sources added yet.
+    </p>
+
+  ) : (
+
+    <div style={{ marginTop: "18px" }}>
+
+      {incomeSources.map((source) => (
+
+        <div
+          key={source.id}
+          className="subscription-item"
+        >
+
+          <div>
+
             <strong>
-              {formatMonth(
-                currentMonth
-              )}
+              💰 {source.name}
             </strong>
-          </p>
 
-          <div className="input-row">
-
-            <input
-              type="number"
-              value={income}
-              onChange={(e) =>
-                setIncome(
-                  Number(
-                    e.target.value
-                  )
-                )
-              }
-              placeholder="Enter income"
-            />
+            <p>
+              ₹
+              {Number(
+                source.amount
+              ).toLocaleString()}
+              /month
+            </p>
 
           </div>
 
-        </section>
+          <div className="subscription-actions">
+
+            <strong>
+              ₹
+              {Number(
+                source.amount
+              ).toLocaleString()}
+            </strong>
+
+            <button
+              className="expense-delete"
+              onClick={() =>
+                deleteIncomeSource(
+                  source.id
+                )
+              }
+            >
+              🗑️
+            </button>
+
+          </div>
+
+        </div>
+
+      ))}
+
+    </div>
+
+  )}
+
+  {/* TOTAL INCOME */}
+
+  <div className="subscription-total">
+
+    <div>
+
+      <span>
+        Total monthly income
+      </span>
+
+      <strong>
+        ₹{income.toLocaleString()}
+      </strong>
+
+    </div>
+
+  </div>
+
+</section>
 
         {/* ADD EXPENSE */}
 
@@ -3169,161 +3371,159 @@ function App() {
 
         {/* FINANCIAL GOALS */}
 
-        <section className="panel">
+<section className="panel">
 
-          <h2>
-            🎯 Financial Goals
-          </h2>
+  <h2>
+    🎯 Financial Goals
+  </h2>
 
-          <div className="input-row">
+  <div className="input-row">
 
-            <input
-              type="text"
-              value={newGoalName}
-              onChange={(e) =>
-                setNewGoalName(
-                  e.target.value
-                )
-              }
-              placeholder="Goal name"
-            />
+    <input
+      type="text"
+      value={newGoalName}
+      onChange={(e) =>
+        setNewGoalName(e.target.value)
+      }
+      placeholder="Goal name"
+    />
 
-            <input
-              type="number"
-              value={newGoalTarget}
-              onChange={(e) =>
-                setNewGoalTarget(
-                  e.target.value
-                )
-              }
-              placeholder="Target ₹"
-            />
+    <input
+      type="number"
+      value={newGoalTarget}
+      onChange={(e) =>
+        setNewGoalTarget(e.target.value)
+      }
+      placeholder="Target ₹"
+    />
 
-            <input
-              type="number"
-              value={newGoalCurrent}
-              onChange={(e) =>
-                setNewGoalCurrent(
-                  e.target.value
-                )
-              }
-              placeholder="Current savings ₹"
-            />
+    <input
+      type="number"
+      value={totalSavings}
+      readOnly
+      placeholder="Current savings ₹"
+    />
 
-            <button
-              onClick={addGoal}
-            >
-              + Add Goal
-            </button>
+    <button onClick={addGoal}>
+      + Add Goal
+    </button>
 
-          </div>
+  </div>
 
-          {goals.map(
-            (
-              goal,
-              index
-            ) => {
+  {goals.map((goal, index) => {
 
-              const remaining =
-                Math.max(
-                  goal.target -
-                    goal.current,
-                  0
-                );
+    // Always use the latest FinGlass savings
+    const currentSavings = totalSavings;
 
-              const progress =
-                goal.target > 0
-                  ? Math.min(
-                      (goal.current /
-                        goal.target) *
-                        100,
-                      100
-                    )
-                  : 0;
+    // Amount still needed
+    const remaining = Math.max(
+      Number(goal.target) - currentSavings,
+      0
+    );
 
-              const months =
-                monthlySavings >
-                0
-                  ? (
-                      remaining /
-                      monthlySavings
-                    ).toFixed(1)
-                  : "—";
+    // Goal progress percentage
+    const progress =
+      Number(goal.target) > 0
+        ? Math.min(
+            (currentSavings / Number(goal.target)) * 100,
+            100
+          )
+        : 0;
 
-              return (
+    // Estimated months to reach goal
+    const months =
+      remaining === 0
+        ? 0
+        : monthlySavings > 0
+        ? (remaining / monthlySavings).toFixed(1)
+        : "—";
 
-                <div
-                  className="goal-info"
-                  key={index}
-                >
+    return (
+      <div
+        className="goal-info"
+        key={goal.id || index}
+      >
 
-                  <div className="goal-header">
+        <div className="goal-header">
 
-                    <h3>
-                      🎯{" "}
-                      {goal.name}
-                    </h3>
+          <h3>
+            🎯 {goal.name}
+          </h3>
 
-                    <button
-                      className="goal-delete"
-                      onClick={() =>
-                        deleteGoal(
-                          index
-                        )
-                      }
-                    >
-                      🗑️
-                    </button>
+          <button
+            className="goal-delete"
+            onClick={() => deleteGoal(index)}
+          >
+            🗑️
+          </button>
 
-                  </div>
+        </div>
 
-                  <p>
-                    ₹
-                    {Number(
-                      goal.current
-                    ).toLocaleString()}
-                    {" "}saved of{" "}
-                    ₹
-                    {Number(
-                      goal.target
-                    ).toLocaleString()}
-                  </p>
+        {/* CURRENT SAVINGS */}
 
-                  <div className="progress-bar">
+        <p>
+          ₹{currentSavings.toLocaleString()} saved of ₹
+          {Number(goal.target).toLocaleString()}
+        </p>
 
-                    <div
-                      className="progress"
-                      style={{
-                        width:
-                          `${progress}%`,
-                      }}
-                    ></div>
+        {/* PROGRESS BAR */}
 
-                  </div>
+        <div className="progress-bar">
 
-                  <p>
-                    <strong>
-                      ₹
-                      {remaining.toLocaleString()}
-                    </strong>
-                    {" "}remaining
-                  </p>
+          <div
+            className="progress"
+            style={{
+              width: `${progress}%`,
+            }}
+          ></div>
 
-                  <p>
-                    Estimated time:{" "}
-                    <strong>
-                      {months} months
-                    </strong>
-                  </p>
+        </div>
 
-                </div>
+        {/* PROGRESS PERCENTAGE */}
 
-              );
-            }
+        <p>
+          📊 Progress:{" "}
+          <strong>
+            {progress.toFixed(1)}%
+          </strong>
+        </p>
+
+        {/* REMAINING */}
+
+        <p>
+          {remaining > 0 ? (
+            <>
+              <strong>
+                ₹{remaining.toLocaleString()}
+              </strong>{" "}
+              more needed
+            </>
+          ) : (
+            <strong>
+              🎉 Goal reached!
+            </strong>
           )}
+        </p>
 
-        </section>
+        {/* ESTIMATED TIME */}
 
+        <p>
+          ⏱️ Estimated time:{" "}
+          <strong>
+            {months === 0
+              ? "Goal reached"
+              : months === "—"
+              ? "—"
+              : `${months} months`}
+          </strong>
+        </p>
+
+      </div>
+    );
+
+  })}
+
+</section>
         {/* WHAT-IF SIMULATOR */}
 
         <section className="panel">
